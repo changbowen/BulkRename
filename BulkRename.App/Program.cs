@@ -1,8 +1,9 @@
-﻿using NaturalSort.Extension;
-using System;
+﻿using System;
 using CommandLine;
 using System.Diagnostics;
 using static BulkRename.App.Helpers;
+using NaturalSort.Extension;
+using System.Text.Json;
 
 namespace BulkRename.App
 {
@@ -40,6 +41,7 @@ namespace BulkRename.App
         public static readonly string ExeDir = Path.GetDirectoryName(ExePath);
         public static readonly Version Version = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
         public static readonly char[] InvalidFileNameChars = Path.GetInvalidFileNameChars();
+        public static readonly StringComparison PathComparison = StringComparison.Ordinal;
 
         public static Options Params { get; private set; }
 
@@ -52,22 +54,25 @@ namespace BulkRename.App
         {
             Params = opt;
 
-            // convert to array of MoveItem
+            // convert to array of Item
             var items = Params.Paths.Where(path => path?.Trim().TrimEnd(Path.DirectorySeparatorChar).Length > 0)
                 .Distinct()
                 .SelectMany(path => {
                     // make sure all paths are valid and add to list
-                    var item = new MoveItem(path);
+                    var item = new Item(path);
                     if (item.Type == PathType.None)
                         ConsoleWrite($"Path does not exist: {path}", ConsoleMessageLevel.Warning);
                     else if (item.ParentPath == null)
                         ConsoleWrite($"Unable to access parent location of path: {path}", ConsoleMessageLevel.Warning);
                     else if (item.Type == PathType.Directory && Params.Enumerate) {
-                        return MoveItem.EnumeratePath(path, Params.SearchPattern, Params.Recursive).Concat(new[] { item });
+                        return Directory.EnumerateFileSystemEntries(path, Params.SearchPattern,
+                            Params.Recursive ? SearchOption.AllDirectories : SearchOption.TopDirectoryOnly).Select(s => new Item(s))
+                            .Concat(new[] { item });
+                        //return Item.EnumeratePath(path, Params.SearchPattern, Params.Recursive).Concat(new[] { item });
                     }
                     return new[] { item };
                 })
-                .OrderBy(i => i.FullName, StringComparison.OrdinalIgnoreCase.WithNaturalSort())
+                .OrderBy(i => i.FullName, PathComparison.WithNaturalSort())
                 .ToArray();
 
             if (items.Length == 0) {
@@ -79,11 +84,19 @@ namespace BulkRename.App
             foreach (var child in items) {
                 if (child.Type == PathType.None) continue;
                 foreach (var parent in items) {
-                    if (parent.Type == PathType.None || !child.FullName.IsSubPath(parent.FullName)) continue;
-                    child.Level++;
-                    parent.Children.Add(child);
+                    if (parent.Type != PathType.Directory || child.FullName.Length <= parent.FullName.Length) continue;
+                    var parentPathWithSep = parent.FullName.TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
+                    if (child.FullName.StartsWith(parentPathWithSep)) {
+                        child.Level += child.FullName.Remove(0, parentPathWithSep.Length).Split(Path.DirectorySeparatorChar).Length;
+                        parent.Descendants.Add(child);
+                    }
+                    //if (child.ParentPath.Equals(parent.FullName)) parent.Children.Add(child);
                 }
             }
+
+#if DEBUG
+            ConsoleWrite(JsonSerializer.Serialize(items, new JsonSerializerOptions { WriteIndented = true }), ConsoleMessageLevel.Debug);
+#endif
 
             var editorContent = @$"#############################################
 #         BULK RENAME by Carl Chang         #
@@ -123,7 +136,7 @@ namespace BulkRename.App
                 var newContent = await File.ReadAllTextAsync(tmpConPath, System.Text.Encoding.UTF8);
                 var newNames = newContent.Split(Environment.NewLine, StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)
                     .Select(s => {
-                        var i = s.IndexOf('#', StringComparison.Ordinal);
+                        var i = s.IndexOf('#', PathComparison);
                         return i > -1 ? s.Remove(i).Trim() : s;
                     }).Where(s => s.Length > 0).ToArray();
                 
@@ -138,7 +151,7 @@ namespace BulkRename.App
                 }
 
                 // more sanity checks
-                if (newNames.Any(s => InvalidFileNameChars.Any(c => s.Contains(c, StringComparison.Ordinal)))) {
+                if (newNames.Any(s => InvalidFileNameChars.Any(c => s.Contains(c, PathComparison)))) {
                     ConsoleWrite($"Invalid characters in new name.", ConsoleMessageLevel.Error);
                     return;
                 }
@@ -155,7 +168,7 @@ namespace BulkRename.App
                 }
 
                 toDo = toDo
-                    .Where(i => !i.Name.Equals(i.NewName, StringComparison.Ordinal)) // skip unchanged ones while supporting changing letter case
+                    .Where(i => !i.Name.Equals(i.NewName, PathComparison)) // skip unchanged ones while supporting changing letter case
                     .ToArray();
 
                 // rename to temp names to support reusing file names
@@ -171,7 +184,6 @@ namespace BulkRename.App
                         // get another tmpName when it already exists
                         if (GetPathType(tmpPath) != PathType.None) continue;
 
-                        ConsoleWrite($"{item.Name} >>> {tmpName}...", ConsoleMessageLevel.Verbose);
                         item.Move(tmpPath);
                         break;
                     }
@@ -179,8 +191,8 @@ namespace BulkRename.App
 
                 // move back to target names
                 foreach (var item in toDo) {
-                    ConsoleWrite($"{item.Name} >>> {item.NewName}...", ConsoleMessageLevel.Verbose);
-                    item.Move(Path.Combine(item.ParentPath, item.NewName));
+                    var newPath = Path.Combine(item.ParentPath, item.NewName);
+                    item.Move(newPath);
                 }
             }
             finally {

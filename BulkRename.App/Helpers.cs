@@ -80,13 +80,12 @@ namespace BulkRename.App
         /// Check if <paramref name="subPath"/> is under <paramref name="parentPath"/>.
         /// If either parameter is null, returns false.
         /// </summary>
-        public static bool IsSubPath(this string subPath, string parentPath)
+        public static bool IsDescendant(this string subPath, string parentPath)
         {
             if (subPath == null || parentPath == null) return false;
             return subPath.Length > parentPath.Length &&
                 subPath.StartsWith(parentPath.TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar);
         }
-            
 
         public static void ConsoleWrite(string message, ConsoleMessageLevel type, bool newLine = true)
         {
@@ -100,6 +99,7 @@ namespace BulkRename.App
                     if (!Program.Params.Verbose) return;
                     fg = ConsoleColor.DarkGray;
                     break;
+                case ConsoleMessageLevel.Debug: fg = ConsoleColor.Magenta; break;
             }
             ConsoleWrite(type > ConsoleMessageLevel.Success ? $@"{type.ToString().ToUpper()}: {message}" : message, fg, null, newLine);
         }
