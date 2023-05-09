@@ -1,17 +1,17 @@
 ﻿using System;
-using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Security.Cryptography;
 using System.Text;
-using System.Text.RegularExpressions;
+using System.Text.Json;
+using System.Text.Json.Serialization;
+using Tomlyn.Model;
 
 namespace BulkRename.App
 {
     public enum ConsoleMessageLevel
     {
         None, Info, Success,
-        Warning, Error, Verbose, Debug
+        Warning, Error, Verbose
     }
 
     public enum PathType
@@ -22,7 +22,6 @@ namespace BulkRename.App
     public static class Helpers
     {
         internal static Random Random = new();
-        public enum StringGenerator { Guid, ShortGuid, RandomVariableLength }
 
         public static PathType GetPathType(string path)
         {
@@ -54,6 +53,24 @@ namespace BulkRename.App
             }
         }
 
+        public enum StringGenerator
+        {
+            /// <summary>
+            /// A GUID string formatted with N. E.g. c5e3996e16fe494197633cdb386e7879.
+            /// </summary>
+            Guid,
+
+            /// <summary>
+            /// A random string representing a 32-bit integer padded with leading zeros.
+            /// </summary>
+            RandomInt,
+
+            /// <summary>
+            /// A random string containing digits and upper case letters in a specified length.
+            /// </summary>
+            RandomVariableLength
+        }
+
         /// <summary>
         /// Get a pseudo-random string using a specific generator.
         /// </summary>
@@ -64,16 +81,21 @@ namespace BulkRename.App
                 case StringGenerator.Guid:
                 default:
                     return Guid.NewGuid().ToString(@"N");
-                case StringGenerator.ShortGuid:
-                    return Regex.Replace(Convert.ToBase64String(Guid.NewGuid().ToByteArray()), "[/+=]", "");
+                case StringGenerator.RandomInt:
+                    return Random.Next(0, int.MaxValue).ToString("D10");
                 case StringGenerator.RandomVariableLength:
-                    var chars = @"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-                    var sb = new StringBuilder();
-                    for (int i = 0; i < length; i++) {
-                        sb.Append(chars[Random.Next(0, chars.Length)]);
-                    }
-                    return sb.ToString();
+                    return GetRandomString(length);
             }
+        }
+
+        public static string GetRandomString(int length)
+        {
+            var chars = @"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+            var sb = new StringBuilder();
+            for (int i = 0; i < length; i++) {
+                sb.Append(chars[Random.Next(0, chars.Length)]);
+            }
+            return sb.ToString();
         }
 
         /// <summary>
@@ -85,6 +107,12 @@ namespace BulkRename.App
             if (subPath == null || parentPath == null) return false;
             return subPath.Length > parentPath.Length &&
                 subPath.StartsWith(parentPath.TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar);
+        }
+
+        public static void ConsoleWrite(Func<string> messageCallback, ConsoleMessageLevel type, bool newLine = true)
+        {
+            if (type == ConsoleMessageLevel.Verbose && !Program.Params.Verbose) return;
+            ConsoleWrite(messageCallback(), ConsoleMessageLevel.Verbose, newLine);
         }
 
         public static void ConsoleWrite(string message, ConsoleMessageLevel type, bool newLine = true)
@@ -99,7 +127,6 @@ namespace BulkRename.App
                     if (!Program.Params.Verbose) return;
                     fg = ConsoleColor.DarkGray;
                     break;
-                case ConsoleMessageLevel.Debug: fg = ConsoleColor.Magenta; break;
             }
             ConsoleWrite(type > ConsoleMessageLevel.Success ? $@"{type.ToString().ToUpper()}: {message}" : message, fg, null, newLine);
         }
@@ -127,5 +154,63 @@ namespace BulkRename.App
             return input;
         }
 
+        /// <summary>
+        /// Generics version of <seealso cref="Get(TomlTable, string, Type)"/>.
+        /// </summary>
+        public static T Get<T>(this TomlTable tt, string key)
+        {
+            if (tt.ContainsKey(key) && tt[key] is T val) return val;
+            return default;
+        }
+
+        /// <summary>
+        /// Missing-key-safe and type-safe method for getting values from <see cref="TomlTable"/>.
+        /// </summary>
+        /// <typeparam name="T">Target type of value.</typeparam>
+        /// <returns>Value object of the specified type if key exists and value is <paramref name="type"/>.
+        /// Otherwise null.</returns>
+        public static object Get(this TomlTable tt, string key, Type type)
+        {
+            if (tt.ContainsKey(key) && tt[key].GetType().IsAssignableFrom(type)) return tt[key];
+            return type.IsValueType ? Activator.CreateInstance(type) : null;
+        }
+
+        public static bool TryGet(this TomlTable tt, string key, Type type, out object value)
+        {
+            if (tt.ContainsKey(key) && tt[key].GetType().IsAssignableFrom(type)) {
+                value = tt[key];
+                return true;
+            }
+            value = null;
+            return false;
+        }
+
+        /// <summary>
+        /// Missing-key-safe method for getting values from <see cref="TomlTable"/>.
+        /// </summary>
+        /// <returns>Value object if key exists. Otherwise null.</returns>
+        public static object Get(this TomlTable tt, string key)
+        {
+            if (tt.ContainsKey(key)) return tt[key];
+            return null;
+        }
+
+        public static bool TryGet<T>(this TomlTable tt, string key, out T value)
+        {
+            if (tt.ContainsKey(key) && tt[key] is T val) {
+                value = val;
+                return true;
+            }
+            value = default;
+            return false;
+        }
+
+
+        public static string ToJson<T>(this T obj)
+        {
+            var options = new JsonSerializerOptions() { WriteIndented = true };
+            options.Converters.Add(new JsonStringEnumConverter());
+            return JsonSerializer.Serialize(obj, options);
+        }
     }
 }

@@ -1,45 +1,19 @@
 ﻿using System;
-using CommandLine;
-using System.Diagnostics;
-using static BulkRename.App.Helpers;
+using System.Text;
+using Tomlyn;
+using Tomlyn.Model;
 using NaturalSort.Extension;
-using System.Text.Json;
+using System.Reflection;
+using static BulkRename.App.Helpers;
 
 namespace BulkRename.App
 {
     public class Program
     {
-        public class Options
-        {
-            [Value(0, Required = true)]
-            public IEnumerable<string> Paths { get; set; }
-
-            [Option('e', "enumerate", Required = false, Default = false, HelpText = "Enumerate and include directory contents. Otherwise only specified paths are processed.")]
-            public bool Enumerate { get; set; }
-
-            [Option('r', "recursive", Required = false, Default = false, HelpText = "Enumerate recursively.")]
-            public bool Recursive { get; set; }
-
-            [Option('s', "searchpattern", Default = @"*", HelpText = "Search pattern when enumerating. * and ? are supported.")]
-            public string SearchPattern { get; set; }
-
-            [Option('v', "verbose", Required = false, Default = false, HelpText = "Enable verbose output.")]
-            public bool Verbose { get; set; }
-
-            [Option('c', "editorcmd", Required = false, Default = @"notepad.exe", HelpText = "Editor command line for editing names list. The path to the list file will be passed as the first parameter.")]
-            public string EditorCommand { get; set; }
-
-            [Option('t', "tempnametype", Required = false, Default = StringGenerator.RandomVariableLength, HelpText = "Temporary name generator to use.")]
-            public StringGenerator TempNameType { get; set; }
-
-            [Option('i', "indentsize", Required = false, Default = 4, HelpText = "Number of spaces of the indentation on each child items.")]
-            public int IndentSize { get; set; }
-        }
-
         public static readonly string ProductName = nameof(BulkRename);
         public static readonly string ExePath = Environment.ProcessPath;
         public static readonly string ExeDir = Path.GetDirectoryName(ExePath);
-        public static readonly Version Version = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
+        public static readonly Version Version = Assembly.GetExecutingAssembly().GetName().Version;
         public static readonly char[] InvalidFileNameChars = Path.GetInvalidFileNameChars();
         public static readonly StringComparison PathComparison = StringComparison.Ordinal;
 
@@ -47,13 +21,40 @@ namespace BulkRename.App
 
         public static async Task Main(string[] args)
         {
-            await Parser.Default.ParseArguments<Options>(args).WithParsedAsync(RunWithOptions);
+            // get configs
+            TomlTable toml = null;
+            foreach (var cfgPath in new[] {
+                @"BulkRename.App.cfg",
+                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), @$".{nameof(BulkRename).ToLowerInvariant()}")
+            }) {
+                if (!File.Exists(cfgPath)) continue;
+
+                try { toml = Toml.ToModel(await File.ReadAllTextAsync(cfgPath, Encoding.UTF8)); }
+                catch (Exception ex) {
+                    ConsoleWrite($"Error when loading configuration file at {cfgPath}.\n{ex.Message}", ConsoleMessageLevel.Warning);
+                };
+                break;
+            }
+
+            // get command line args
+            var opts = CommandLine.Parser.Default.ParseArguments<Options>(args).Value;
+            if (opts == null) {
+                ConsoleWrite($"Invalid arguments.", ConsoleMessageLevel.Error);
+                return;
+            }
+
+            //// merge while giving cmd args priority
+            if (toml != null) opts.MergeToml(toml);
+
+            // start main program
+            Params = opts;
+            ConsoleWrite(() => $"Options: {Params.ToJson()}", ConsoleMessageLevel.Verbose);
+            ConsoleWrite($"Starting program...", ConsoleMessageLevel.Verbose);
+            await Run();
         }
 
-        public static async Task RunWithOptions(Options opt)
+        public static async Task Run()
         {
-            Params = opt;
-
             // convert to array of Item
             var items = Params.Paths.Where(path => path?.Trim().TrimEnd(Path.DirectorySeparatorChar).Length > 0)
                 .Distinct()
@@ -87,19 +88,19 @@ namespace BulkRename.App
                     if (parent.Type != PathType.Directory || child.FullName.Length <= parent.FullName.Length) continue;
                     var parentPathWithSep = parent.FullName.TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
                     if (child.FullName.StartsWith(parentPathWithSep)) {
-                        child.Level += child.FullName.Remove(0, parentPathWithSep.Length).Split(Path.DirectorySeparatorChar).Length;
+                        var lvl = child.FullName.Remove(0, parentPathWithSep.Length).Split(Path.DirectorySeparatorChar).Length;
+                        if (lvl > child.Level) child.Level = lvl;
                         parent.Descendants.Add(child);
                     }
                     //if (child.ParentPath.Equals(parent.FullName)) parent.Children.Add(child);
                 }
             }
 
-#if DEBUG
-            ConsoleWrite(JsonSerializer.Serialize(items, new JsonSerializerOptions { WriteIndented = true }), ConsoleMessageLevel.Debug);
-#endif
+
+            ConsoleWrite(() => Environment.NewLine + string.Join(Environment.NewLine, items.Select(item => $"{item.FullName} [{item.Type}]{(item.Type == PathType.Directory ? $" [{item.Descendants.Count} sub path(s)]" : null)}")), ConsoleMessageLevel.Verbose);
 
             var editorContent = @$"#############################################
-#         BULK RENAME by Carl Chang         #
+#         Bulk Rename by Carl Chang         #
 #############################################
 
 # To rename:
@@ -107,15 +108,15 @@ namespace BulkRename.App
 #    2. Save and close the editor app.
 #
 # Unchanged lines will be skipped.
-# Do NOT add or remove uncommented lines!
-# Lines commented out are invalid paths that must be ignored.
-# New name cannot contain illegal characters: "" < > | : * ? \ /
+# Lines commented out are invalid paths that will be ignored.
+# Adding or removing uncommented lines below will result in failure.
+# New names cannot contain illegal characters: "" < > | : * ? \ /
 
 
 {
                 // ignore invalid ones
                 string.Join(Environment.NewLine, items.Select(i =>
-                    i.Skip ? @$"# {i.ErrMsg ?? @"[ERROR]"}" : $@"{(i.Level > 0 ? new string(' ', i.Level * Params.IndentSize) : null)}{i.Name}"
+                    i.Skip ? @$"# {i.ErrMsg ?? @"[ERROR]"}" : $@"{(i.Level > 0 ? new string(' ', i.Level * (int)Params.IndentSize) : null)}{i.Name}"
                 ))
 }
 ";
@@ -124,16 +125,18 @@ namespace BulkRename.App
             items = null;
 
             // create temp file
-            var tmpConPath = Path.Combine(Path.GetTempPath(), GetRandomString());
+            var tmpConPath = Path.Combine(Path.GetTempPath(), GetRandomString(StringGenerator.Guid));
             try {
                 // set temp content
-                await File.WriteAllTextAsync(tmpConPath, editorContent, System.Text.Encoding.UTF8);
+                await File.WriteAllTextAsync(tmpConPath, editorContent, Encoding.UTF8);
 
                 // open set editor
-                await Process.Start(Params.EditorCommand, tmpConPath).WaitForExitAsync();
+                await System.Diagnostics.Process
+                    .Start(Params.EditorCommand, string.Format(Params.EditorArgs, tmpConPath))
+                    .WaitForExitAsync();
 
                 // parse modified content
-                var newContent = await File.ReadAllTextAsync(tmpConPath, System.Text.Encoding.UTF8);
+                var newContent = await File.ReadAllTextAsync(tmpConPath, Encoding.UTF8);
                 var newNames = newContent.Split(Environment.NewLine, StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)
                     .Select(s => {
                         var i = s.IndexOf('#', PathComparison);
@@ -178,7 +181,7 @@ namespace BulkRename.App
                     {
                         if (loopCount > 10000) throw new Exception("Maximum temporary name limit reached.");
                         loopCount++;
-                        var tmpName = GetRandomString(Params.TempNameType, item.Name.Length);
+                        var tmpName = Params.TempNameGenerator(item.Name.Length);
                         var tmpPath = Path.Combine(item.ParentPath, tmpName);
 
                         // get another tmpName when it already exists
