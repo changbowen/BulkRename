@@ -5,6 +5,8 @@ using Tomlyn.Model;
 using NaturalSort.Extension;
 using System.Reflection;
 using static BulkRename.App.Helpers;
+using CommandLine;
+using System.Text.RegularExpressions;
 
 namespace BulkRename.App
 {
@@ -17,46 +19,84 @@ namespace BulkRename.App
         public static readonly char[] InvalidFileNameChars = Path.GetInvalidFileNameChars();
         public static readonly StringComparison PathComparison = StringComparison.Ordinal;
 
-        public static Options Params { get; private set; }
+        /// <summary>
+        /// Default value is the fallback config file path in the application directory.
+        /// If any file exists in the config file search locations, the value is updated with the new path.
+        /// </summary>
+        public static string ConfigPath { get; private set; } = Path.Combine(ExeDir, @$"{nameof(BulkRename)}.{nameof(App)}.cfg");
+        public static CommonOptions Opts { get; private set; }
 
         public static async Task Main(string[] args)
         {
-            // get configs
             TomlTable toml = null;
-            foreach (var cfgPath in new[] {
-                @"BulkRename.App.cfg",
-                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), @$".{nameof(BulkRename).ToLowerInvariant()}")
-            }) {
-                if (!File.Exists(cfgPath)) continue;
 
-                try { toml = Toml.ToModel(await File.ReadAllTextAsync(cfgPath, Encoding.UTF8)); }
+            // select config file
+            foreach (var path in new[] {
+                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), @$".{nameof(BulkRename).ToLowerInvariant()}"),
+                ConfigPath,
+            }) {
+                if (!File.Exists(path)) continue;
+                ConfigPath = path;
+
+                try { toml = Toml.ToModel(await File.ReadAllTextAsync(ConfigPath, Encoding.UTF8)); }
                 catch (Exception ex) {
-                    ConsoleWrite($"Error when loading configuration file at {cfgPath}.\n{ex.Message}", ConsoleMessageLevel.Warning);
+                    ConsoleWrite($"Error when loading configuration file at {ConfigPath}.\n{ex.Message}", ConsoleMessageLevel.Warning);
                 };
                 break;
             }
 
             // get command line args
-            var opts = CommandLine.Parser.Default.ParseArguments<Options>(args).Value;
-            if (opts == null) {
-                ConsoleWrite($"Invalid arguments.", ConsoleMessageLevel.Error);
+            (await (await Parser.Default.ParseArguments<RenameOptions, ConfigOptions>(args)
+                .WithParsed<CommonOptions>(opts => {
+                    // merge config options
+                    if (toml != null) opts.MergeToml(toml);
+                    // save options to global var
+                    Opts = opts;
+                    ConsoleWrite(() => $"Options: {Opts.ToJson()}", ConsoleMessageLevel.Verbose);
+                })
+                .WithParsedAsync<RenameOptions>(async opts => {
+                    // start rename action
+                    await RunRename(opts);
+                })).WithParsedAsync<ConfigOptions>(async opts => {
+                    // start config action
+                    await RunConfig(opts);
+                }))
+                .WithNotParsed(err => {
+                    ConsoleWrite(string.Join(Environment.NewLine, err.Select(e => e.Tag.ToString())), ConsoleMessageLevel.Error);
+                });
+        }
+
+        public static async Task RunConfig(ConfigOptions opts)
+        {
+            ConsoleWrite("Starting config...", ConsoleMessageLevel.Verbose);
+
+            // open config file with default editor
+            if (opts.Edit) {
+                await System.Diagnostics.Process
+                    .Start(opts.EditorCommand, string.Format(opts.EditorArgs, ConfigPath))
+                    .WaitForExitAsync();
                 return;
             }
 
-            //// merge while giving cmd args priority
-            if (toml != null) opts.MergeToml(toml);
-
-            // start main program
-            Params = opts;
-            ConsoleWrite(() => $"Options: {Params.ToJson()}", ConsoleMessageLevel.Verbose);
-            ConsoleWrite($"Starting program...", ConsoleMessageLevel.Verbose);
-            await Run();
+            // display config and exit
+            if (File.Exists(ConfigPath)) {
+                ConsoleWrite($"Current active configuration:", ConsoleMessageLevel.Info);
+                ConsoleWrite(Toml.FromModel(opts));
+                
+                ConsoleWrite($@"Current configuration from {ConfigPath}:", ConsoleMessageLevel.Info);
+                ConsoleWrite(string.Join(Environment.NewLine, (await File.ReadAllTextAsync(ConfigPath, Encoding.UTF8))
+                    .GetNonComments(lineSelector: s => Regex.Replace(s, @"^\s*\[.+\]$", string.Empty))));
+            }
+            else
+                ConsoleWrite("No configuration file is found.", ConsoleMessageLevel.Info);
         }
 
-        public static async Task Run()
+        public static async Task RunRename(RenameOptions opts)
         {
+            ConsoleWrite("Starting rename...", ConsoleMessageLevel.Verbose);
+
             // convert to array of Item
-            var items = Params.Paths.Where(path => path?.Trim().TrimEnd(Path.DirectorySeparatorChar).Length > 0)
+            var items = opts.Paths.Where(path => path?.Trim().TrimEnd(Path.DirectorySeparatorChar).Length > 0)
                 .Distinct()
                 .SelectMany(path => {
                     // make sure all paths are valid and add to list
@@ -65,9 +105,9 @@ namespace BulkRename.App
                         ConsoleWrite($"Path does not exist: {path}", ConsoleMessageLevel.Warning);
                     else if (item.ParentPath == null)
                         ConsoleWrite($"Unable to access parent location of path: {path}", ConsoleMessageLevel.Warning);
-                    else if (item.Type == PathType.Directory && Params.Enumerate) {
-                        return Directory.EnumerateFileSystemEntries(path, Params.SearchPattern,
-                            Params.Recursive ? SearchOption.AllDirectories : SearchOption.TopDirectoryOnly).Select(s => new Item(s))
+                    else if (item.Type == PathType.Directory && opts.Enumerate) {
+                        return Directory.EnumerateFileSystemEntries(path, opts.SearchPattern,
+                            opts.Recursive ? SearchOption.AllDirectories : SearchOption.TopDirectoryOnly).Select(s => new Item(s))
                             .Concat(new[] { item });
                         //return Item.EnumeratePath(path, Params.SearchPattern, Params.Recursive).Concat(new[] { item });
                     }
@@ -96,8 +136,8 @@ namespace BulkRename.App
                 }
             }
 
-
-            ConsoleWrite(() => Environment.NewLine + string.Join(Environment.NewLine, items.Select(item => $"{item.FullName} [{item.Type}]{(item.Type == PathType.Directory ? $" [{item.Descendants.Count} sub path(s)]" : null)}")), ConsoleMessageLevel.Verbose);
+            if (opts.Verbose)
+                ConsoleWrite(Environment.NewLine + string.Join(Environment.NewLine, items.Select(item => $"{item.FullName} [{item.Type}]{(item.Type == PathType.Directory ? $" [{item.Descendants.Count} sub path(s)]" : null)}")), ConsoleMessageLevel.Verbose);
 
             var editorContent = @$"#############################################
 #         Bulk Rename by Carl Chang         #
@@ -116,7 +156,7 @@ namespace BulkRename.App
 {
                 // ignore invalid ones
                 string.Join(Environment.NewLine, items.Select(i =>
-                    i.Skip ? @$"# {i.ErrMsg ?? @"[ERROR]"}" : $@"{(i.Level > 0 ? new string(' ', i.Level * (int)Params.IndentSize) : null)}{i.Name}"
+                    i.Skip ? @$"# {i.ErrMsg ?? @"[ERROR]"}" : $@"{(i.Level > 0 ? new string(' ', i.Level * (int)opts.IndentSize) : null)}{i.Name}"
                 ))
 }
 ";
@@ -132,16 +172,12 @@ namespace BulkRename.App
 
                 // open set editor
                 await System.Diagnostics.Process
-                    .Start(Params.EditorCommand, string.Format(Params.EditorArgs, tmpConPath))
+                    .Start(opts.EditorCommand, string.Format(opts.EditorArgs, tmpConPath))
                     .WaitForExitAsync();
 
                 // parse modified content
                 var newContent = await File.ReadAllTextAsync(tmpConPath, Encoding.UTF8);
-                var newNames = newContent.Split(Environment.NewLine, StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)
-                    .Select(s => {
-                        var i = s.IndexOf('#', PathComparison);
-                        return i > -1 ? s.Remove(i).Trim() : s;
-                    }).Where(s => s.Length > 0).ToArray();
+                var newNames = newContent.GetNonComments().ToArray();
                 
                 // sanity check
                 if (newNames.Length == 0) {
@@ -181,7 +217,7 @@ namespace BulkRename.App
                     {
                         if (loopCount > 10000) throw new Exception("Maximum temporary name limit reached.");
                         loopCount++;
-                        var tmpName = Params.TempNameGenerator(item.Name.Length);
+                        var tmpName = opts.TempNameGenerator(item.Name.Length);
                         var tmpPath = Path.Combine(item.ParentPath, tmpName);
 
                         // get another tmpName when it already exists

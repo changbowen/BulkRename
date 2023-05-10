@@ -111,7 +111,7 @@ namespace BulkRename.App
 
         public static void ConsoleWrite(Func<string> messageCallback, ConsoleMessageLevel type, bool newLine = true)
         {
-            if (type == ConsoleMessageLevel.Verbose && !Program.Params.Verbose) return;
+            if (type == ConsoleMessageLevel.Verbose && !Program.Opts.Verbose) return;
             ConsoleWrite(messageCallback(), ConsoleMessageLevel.Verbose, newLine);
         }
 
@@ -124,7 +124,7 @@ namespace BulkRename.App
                 case ConsoleMessageLevel.Warning: fg = ConsoleColor.Yellow; break;
                 case ConsoleMessageLevel.Error: fg = ConsoleColor.Red; break;
                 case ConsoleMessageLevel.Verbose:
-                    if (!Program.Params.Verbose) return;
+                    if (!Program.Opts.Verbose) return;
                     fg = ConsoleColor.DarkGray;
                     break;
             }
@@ -206,11 +206,26 @@ namespace BulkRename.App
         }
 
 
-        public static string ToJson<T>(this T obj)
+        public static string ToJson(this object obj)
         {
             var options = new JsonSerializerOptions() { WriteIndented = true };
             options.Converters.Add(new JsonStringEnumConverter());
             return JsonSerializer.Serialize(obj, options);
         }
+
+        /// <summary>
+        /// Remove lines that are commented out from a string.
+        /// </summary>
+        /// <param name="commentChar">The comment symbol. Line content after it will be removed.</param>
+        /// <param name="lineSelector">Optional selector to further transform line text after comments are removed.</param>
+        /// <returns>All non-empty lines after all the transformations.</returns>
+        public static IEnumerable<string> GetNonComments(this string text, char commentChar = '#', Func<string, string> lineSelector = null) => text
+            .Split('\n', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)
+            .Select(s => {
+                var i = s.IndexOf(commentChar, Program.PathComparison);
+                var line = i > -1 ? s.Remove(i).Trim() : s;
+                return lineSelector != null ? lineSelector(line) : line;
+            })
+            .Where(s => s.Length > 0);
     }
 }

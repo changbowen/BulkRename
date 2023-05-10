@@ -4,10 +4,9 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using System.Runtime.InteropServices;
-using System.Text;
 using static BulkRename.App.Helpers;
 using Tomlyn.Model;
-using System.Reflection.Emit;
+using System.Runtime.Serialization;
 
 namespace BulkRename.App
 {
@@ -19,23 +18,15 @@ namespace BulkRename.App
     }
 
 
-    /// <summary>
-    /// TOML:
-    ///   - Floats/Double are all mapped to C# double.
-    ///   - Integers are all mapped to C# long.
-    /// </summary>
-    public class Options
+    public abstract class CommonOptions
     {
-        public HashSet<string> ExplicitOpts = new();
-
-
-        [Value(0, Required = true)]
-        public IEnumerable<string> Paths { get; set; }
+        [IgnoreDataMember] // excludes from toml serialization
+        public HashSet<string> ExplicitOpts { get; } = new();
 
 
         private bool enumerate;
         [Config(Key = "enumerate", Section = "input")]
-        [Option('e', "enumerate", HelpText = "Enumerate and include directory contents. Otherwise only specified paths are processed. Default is false.")]
+        [Option('n', "enumerate", HelpText = "Enumerate and include directory contents. Otherwise only specified paths are processed. Default is false.")]
         public bool Enumerate { get => enumerate; set { ExplicitOpts.Add(nameof(Enumerate)); enumerate = value; } }
 
 
@@ -104,36 +95,42 @@ namespace BulkRename.App
         {
             if (table == null || table.Keys.Count == 0) return;
 
-            foreach (var prop in typeof(Options).GetProperties()) {
+            foreach (var prop in this.GetType().GetProperties()) {
                 if (ExplicitOpts.Contains(prop.Name)) return; // skip params explicitly set in cmdline
 
                 var cfgAttr = prop.GetCustomAttribute<ConfigAttribute>();
                 if (cfgAttr == null) continue; // skip non-option attributes
 
+                // look for config under seciton if set, or in global
                 var tgtTable = cfgAttr.Section != null ? table.Get<TomlTable>(cfgAttr.Section) : table;
-                if (tgtTable == null) continue;
-
-                if (tgtTable.TryGet(cfgAttr.Key, prop.PropertyType, out var val))
+                if (tgtTable != null && tgtTable.TryGet(cfgAttr.Key, prop.PropertyType, out var val))
                     prop.SetValue(this, val);
             }
         }
+    }
 
-        //public void MergeIni(IniData ini)
-        //{
-        //    if (ini == null) return;
 
-        //    foreach (var prop in typeof(Options).GetProperties()) {
-        //        if (ExplicitOpts.Contains(prop.Name)) return; // skip params explicitly set in cmdline
+    /// <summary>
+    /// Properties specific to config action.
+    /// </summary>
+    [Verb("config")]
+    public class ConfigOptions : CommonOptions
+    {
+        private bool edit;
+        [IgnoreDataMember] // excludes from toml serialization
+        [Option('e', "edit", HelpText = "Edit application configurations using the default editor.")]
+        public bool Edit { get => edit; set { ExplicitOpts.Add(nameof(Edit)); edit = value; } }
+    }
 
-        //        var cfgAttr = prop.GetCustomAttribute<ConfigAttribute>();
-        //        if (cfgAttr == null) continue; // skip non-config attributes
 
-        //        var dataCol = cfgAttr.Section != null ? ini[cfgAttr.Section] : ini.Global;
-        //        if (dataCol == null || dataCol.Count == 0) continue;
-
-        //        if (dataCol[cfgAttr.Key] is string val)
-        //            prop.SetValue(this, val);
-        //    }
-        //}
+    /// <summary>
+    /// Properties specific to rename action.
+    /// </summary>
+    [Verb("rename", true)]
+    public class RenameOptions : CommonOptions
+    {
+        [IgnoreDataMember] // excludes from toml serialization
+        [Value(0, Required = true, HelpText = "List of paths to process separated by spaces.")]
+        public IEnumerable<string> Paths { get; set; }
     }
 }
