@@ -7,6 +7,7 @@ using System.Reflection;
 using static BulkRename.App.Helpers;
 using CommandLine;
 using System.Text.RegularExpressions;
+using System.Runtime.InteropServices;
 
 namespace BulkRename.App
 {
@@ -19,11 +20,16 @@ namespace BulkRename.App
         public static readonly char[] InvalidFileNameChars = Path.GetInvalidFileNameChars();
         public static readonly StringComparison PathComparison = StringComparison.Ordinal;
 
+        private static readonly string[] ConfigPaths = new[] {
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), @$".{nameof(BulkRename).ToLowerInvariant()}"),
+            Path.Combine(ExeDir, @$"{nameof(BulkRename)}.{nameof(App)}.cfg")
+        };
+
         /// <summary>
         /// Default value is the fallback config file path in the application directory.
         /// If any file exists in the config file search locations, the value is updated with the new path.
         /// </summary>
-        public static string ConfigPath { get; private set; } = Path.Combine(ExeDir, @$"{nameof(BulkRename)}.{nameof(App)}.cfg");
+        public static string ConfigPath { get; private set; } = ConfigPaths[^1];
         public static CommonOptions Opts { get; private set; }
 
         public static async Task Main(string[] args)
@@ -31,10 +37,7 @@ namespace BulkRename.App
             TomlTable toml = null;
 
             // select config file
-            foreach (var path in new[] {
-                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), @$".{nameof(BulkRename).ToLowerInvariant()}"),
-                ConfigPath,
-            }) {
+            foreach (var path in ConfigPaths) {
                 if (!File.Exists(path)) continue;
                 ConfigPath = path;
 
@@ -46,13 +49,13 @@ namespace BulkRename.App
             }
 
             // get command line args
-            (await (await Parser.Default.ParseArguments<RenameOptions, ConfigOptions>(args)
+            await (await Parser.Default.ParseArguments<RenameOptions, ConfigOptions>(args)
                 .WithParsed<CommonOptions>(opts => {
                     // merge config options
                     if (toml != null) opts.MergeToml(toml);
                     // save options to global var
                     Opts = opts;
-                    ConsoleWrite(() => $"Options: {Opts.ToJson()}", ConsoleMessageLevel.Verbose);
+                    ConsoleWrite(() => $"{opts.GetType().Name}: {Opts.ToJson()}", ConsoleMessageLevel.Verbose);
                 })
                 .WithParsedAsync<RenameOptions>(async opts => {
                     // start rename action
@@ -60,10 +63,10 @@ namespace BulkRename.App
                 })).WithParsedAsync<ConfigOptions>(async opts => {
                     // start config action
                     await RunConfig(opts);
-                }))
-                .WithNotParsed(err => {
-                    ConsoleWrite(string.Join(Environment.NewLine, err.Select(e => e.Tag.ToString())), ConsoleMessageLevel.Error);
                 });
+                //.WithNotParsed(err => {
+                //    ConsoleWrite(string.Join(Environment.NewLine, err.Select(e => e.Tag.ToString())), ConsoleMessageLevel.Error);
+                //});
         }
 
         public static async Task RunConfig(ConfigOptions opts)
@@ -78,11 +81,23 @@ namespace BulkRename.App
                 return;
             }
 
+            // add to shell menu
+            if (opts.Menu) {
+                if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows)) throw new PlatformNotSupportedException();
+
+                var linkPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.SendTo), nameof(BulkRename) + @".lnk");
+                if (File.Exists(linkPath)) {
+                    File.Delete(linkPath);
+                    ConsoleWrite($"Removed shortcut at {linkPath}.", ConsoleMessageLevel.Success);
+                } else {
+                    WindowsHelpers.CreateShortCut(linkPath, ExePath);
+                    ConsoleWrite($"Added shortcut at {linkPath}.", ConsoleMessageLevel.Success);
+                }
+                return;
+            }
+
             // display config and exit
             if (File.Exists(ConfigPath)) {
-                ConsoleWrite($"Current active configuration:", ConsoleMessageLevel.Info);
-                ConsoleWrite(Toml.FromModel(opts));
-                
                 ConsoleWrite($@"Current configuration from {ConfigPath}:", ConsoleMessageLevel.Info);
                 ConsoleWrite(string.Join(Environment.NewLine, (await File.ReadAllTextAsync(ConfigPath, Encoding.UTF8))
                     .GetNonComments(lineSelector: s => Regex.Replace(s, @"^\s*\[.+\]$", string.Empty))));

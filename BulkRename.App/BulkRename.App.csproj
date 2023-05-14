@@ -6,6 +6,11 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>disable</Nullable>
     <ApplicationIcon>BulkRename.ico</ApplicationIcon>
+    <Authors>Carl Chang</Authors>
+    <PackageId>$(SolutionName)</PackageId>
+    <Title>$(SolutionName)</Title>
+    <AssemblyTitle>$(SolutionName)</AssemblyTitle>
+    <Product>$(SolutionName)</Product>
   </PropertyGroup>
 
   <ItemGroup>
@@ -15,6 +20,7 @@
   <ItemGroup>
     <PackageReference Include="CommandLineParser" Version="2.9.1" />
     <PackageReference Include="NaturalSort.Extension" Version="4.0.0" />
+    <PackageReference Include="System.Runtime.InteropServices" Version="4.3.0" />
     <PackageReference Include="Tomlyn" Version="0.16.2" />
   </ItemGroup>
 

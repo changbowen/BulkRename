@@ -128,7 +128,7 @@ namespace BulkRename.App
                     fg = ConsoleColor.DarkGray;
                     break;
             }
-            ConsoleWrite(type > ConsoleMessageLevel.Success ? $@"{type.ToString().ToUpper()}: {message}" : message, fg, null, newLine);
+            ConsoleWrite(type > ConsoleMessageLevel.Success ? $@"[{type.ToString().ToUpper()}] {message}" : message, fg, null, newLine);
         }
 
         public static void ConsoleWrite(string message, ConsoleColor? fg = null, ConsoleColor? bg = null, bool newLine = true)
