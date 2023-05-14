@@ -212,20 +212,7 @@ namespace BulkRename.App
 
                 // rename to temp names to support reusing file names
                 foreach (var item in toDo) {
-                    var loopCount = 0;
-                    while (true)
-                    {
-                        if (loopCount > 10000) throw new Exception("Maximum temporary name limit reached.");
-                        loopCount++;
-                        var tmpName = opts.TempNameGenerator(item.Name.Length);
-                        var tmpPath = Path.Combine(item.ParentPath, tmpName);
-
-                        // get another tmpName when it already exists
-                        if (GetPathType(tmpPath) != PathType.None) continue;
-
-                        item.Move(tmpPath);
-                        break;
-                    }
+                    item.MoveToTempName(opts.TempNameGenerator);
                 }
 
                 // move back to target names
