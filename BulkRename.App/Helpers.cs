@@ -22,6 +22,13 @@ namespace BulkRename.App
     public static class Helpers
     {
         internal static Random Random = new();
+        internal static JsonSerializerOptions DefaultJsonSerializerOptions;
+
+        static Helpers()
+        {
+            DefaultJsonSerializerOptions = new() { WriteIndented = true };
+            DefaultJsonSerializerOptions.Converters.Add(new JsonStringEnumConverter());
+        }
 
         public static PathType GetPathType(string path)
         {
@@ -206,12 +213,8 @@ namespace BulkRename.App
         }
 
 
-        public static string ToJson(this object obj)
-        {
-            var options = new JsonSerializerOptions() { WriteIndented = true };
-            options.Converters.Add(new JsonStringEnumConverter());
-            return JsonSerializer.Serialize(obj, options);
-        }
+        public static string ToJson(this object obj) =>
+            JsonSerializer.Serialize(obj, DefaultJsonSerializerOptions);
 
         /// <summary>
         /// Remove lines that are commented out from a string.

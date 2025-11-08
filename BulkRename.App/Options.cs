@@ -47,7 +47,7 @@ namespace BulkRename.App
             if (table == null || table.Keys.Count == 0) return;
 
             foreach (var prop in this.GetType().GetProperties()) {
-                if (ExplicitOpts.Contains(prop.Name)) return; // skip params explicitly set in cmdline
+                if (ExplicitOpts.Contains(prop.Name)) continue; // skip params explicitly set in cmdline
 
                 var cfgAttr = prop.GetCustomAttribute<ConfigAttribute>();
                 if (cfgAttr == null) continue; // skip non-option attributes

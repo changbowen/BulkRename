@@ -20,10 +20,10 @@ namespace BulkRename.App
         public static readonly char[] InvalidFileNameChars = Path.GetInvalidFileNameChars();
         public static readonly StringComparison PathComparison = StringComparison.Ordinal;
 
-        private static readonly string[] ConfigPaths = new[] {
+        private static readonly string[] ConfigPaths = [
             Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), @$".{nameof(BulkRename).ToLowerInvariant()}"),
             Path.Combine(ExeDir, @$"{nameof(BulkRename)}.{nameof(App)}.cfg")
-        };
+        ];
 
         /// <summary>
         /// Default value is the fallback config file path in the application directory.
@@ -44,7 +44,7 @@ namespace BulkRename.App
                 try { toml = Toml.ToModel(await File.ReadAllTextAsync(ConfigPath, Encoding.UTF8)); }
                 catch (Exception ex) {
                     ConsoleWrite($"Error when loading configuration file at {ConfigPath}.\n{ex.Message}", ConsoleMessageLevel.Warning);
-                };
+                }
                 break;
             }
 
@@ -57,13 +57,8 @@ namespace BulkRename.App
                     Opts = opts;
                     ConsoleWrite(() => $"{opts.GetType().Name}: {Opts.ToJson()}", ConsoleMessageLevel.Verbose);
                 })
-                .WithParsedAsync<RenameOptions>(async opts => {
-                    // start rename action
-                    await RunRename(opts);
-                })).WithParsedAsync<ConfigOptions>(async opts => {
-                    // start config action
-                    await RunConfig(opts);
-                });
+                .WithParsedAsync<RenameOptions>(RunRename))// start rename action
+                .WithParsedAsync<ConfigOptions>(RunConfig);// start config action
                 //.WithNotParsed(err => {
                 //    ConsoleWrite(string.Join(Environment.NewLine, err.Select(e => e.Tag.ToString())), ConsoleMessageLevel.Error);
                 //});
