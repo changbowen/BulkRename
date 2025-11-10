@@ -223,7 +223,7 @@ namespace BulkRename.App
         /// <param name="lineSelector">Optional selector to further transform line text after comments are removed.</param>
         /// <returns>All non-empty lines after all the transformations.</returns>
         public static IEnumerable<string> GetNonComments(this string text, char commentChar = '#', Func<string, string> lineSelector = null) => text
-            .Split('\n', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)
+            .Split(Environment.NewLine, StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)
             .Select(s => {
                 var i = s.IndexOf(commentChar, Program.PathComparison);
                 var line = i > -1 ? s.Remove(i).Trim() : s;

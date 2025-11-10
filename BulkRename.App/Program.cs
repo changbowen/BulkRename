@@ -149,27 +149,27 @@ namespace BulkRename.App
             if (opts.Verbose)
                 ConsoleWrite(Environment.NewLine + string.Join(Environment.NewLine, items.Select(item => $"{item.FullName} [{item.Type}]{(item.Type == PathType.Directory ? $" [{item.Descendants.Count} sub path(s)]" : null)}")), ConsoleMessageLevel.Verbose);
 
-            var editorContent = @$"#############################################
-#         Bulk Rename by Carl Chang         #
-#############################################
+            var editorContent = $"""
+                #############################################
+                #         Bulk Rename by Carl Chang         #
+                #############################################
+                
+                # To rename:
+                #    1. Update each line with the new name.
+                #    2. Save and close the editor app.
+                #
+                # Unchanged lines will be skipped.
+                # Lines commented out are invalid paths that will be ignored.
+                # Adding or removing uncommented non-empty lines below will result in a failure.
+                # New names cannot contain illegal characters: " < > | : * ? \ /
 
-# To rename:
-#    1. Update each line with the new name.
-#    2. Save and close the editor app.
-#
-# Unchanged lines will be skipped.
-# Lines commented out are invalid paths that will be ignored.
-# Adding or removing uncommented lines below will result in failure.
-# New names cannot contain illegal characters: "" < > | : * ? \ /
 
-
-{
-                // ignore invalid ones
-                string.Join(Environment.NewLine, items.Select(i =>
-                    i.Skip ? @$"# {i.ErrMsg ?? @"[ERROR]"}" : $@"{(i.Level > 0 ? new string(' ', i.Level * (int)opts.IndentSize) : null)}{i.Name}"
-                ))
-}
-";
+                { // ignore invalid ones
+                    string.Join(Environment.NewLine, items.Select(i =>
+                        i.Skip ? @$"# {i.ErrMsg ?? @"[ERROR]"}" : $@"{(i.Level > 0 ? new string(' ', i.Level * (int)opts.IndentSize) : null)}{i.Name}"
+                    ))
+                }
+                """.ReplaceLineEndings();
 
             var toDo = items.Where(i => !i.Skip).ToArray();
             items = null;

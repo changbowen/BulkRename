@@ -1,6 +1,36 @@
 # BulkRename
 
-Rename files by editing the file tree in a text editor.
+Rename files by editing the file tree in a text editor, like this:
+
+```
+#############################################
+#         Bulk Rename by Carl Chang         #
+#############################################
+
+# To rename:
+#    1. Update each line with the new name.
+#    2. Save and close the editor app.
+#
+# Unchanged lines will be skipped.
+# Lines commented out are invalid paths that will be ignored.
+# Adding or removing uncommented lines below will result in failure.
+# New names cannot contain illegal characters: " < > | : * ? \ /
+
+sample directory
+    dir1
+    dir2
+        file3.txt
+        file4.txt
+        subdir1
+            file5.txt
+            file6.txt
+            subsubdir1
+                file7.txt
+    file1.txt
+    file2.txt
+```
+
+## Usage
 
 ```powershell
 .\BulkRename.App.exe

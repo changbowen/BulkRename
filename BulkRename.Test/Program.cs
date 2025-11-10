@@ -9,7 +9,7 @@ await BulkRename.App.Program.Main([
     "-v",
     "--enumerate",
     "--recursive",
-    "testfiles",
+    dir,
 ]);
 
 return;
@@ -30,18 +30,17 @@ void createTest1()
 #region Test2
 void createTest2()
 {
-    Directory.CreateDirectory(Path.Combine(dir, "1"));
-    Directory.CreateDirectory(Path.Combine(dir, "2"));
-    File.WriteAllText(Path.Combine(dir, "2", "1.txt"),  "1");
-    File.WriteAllText(Path.Combine(dir, "2", "2.txt"),  "2");
-    Directory.CreateDirectory(Path.Combine(dir, "2\\22"));
-    File.WriteAllText(Path.Combine(dir, "2\\22", "11.txt"),  "11");
-    File.WriteAllText(Path.Combine(dir, "2\\22", "22.txt"),  "22");
-    File.WriteAllText(Path.Combine(dir, "2\\22", "33.txt"),  "33");
-    Directory.CreateDirectory(Path.Combine(dir, "2\\22\\222"));
-    File.WriteAllText(Path.Combine(dir, "2\\22\\222", "222.txt"),  "222");
-    Directory.CreateDirectory(Path.Combine(dir, "10"));
-    Directory.CreateDirectory(Path.Combine(dir, "3"));
+    File.WriteAllText($"{dir}\\file1.txt", "file 1");
+    File.WriteAllText($"{dir}\\file2.txt", "file 2");
+    Directory.CreateDirectory($"{dir}\\dir1");
+    Directory.CreateDirectory($"{dir}\\dir2");
+    File.WriteAllText($"{dir}\\dir2\\file3.txt", "file 3");
+    File.WriteAllText($"{dir}\\dir2\\file4.txt", "file 4");
+    Directory.CreateDirectory($"{dir}\\dir2\\subdir1");
+    File.WriteAllText($"{dir}\\dir2\\subdir1\\file5.txt", "file 5");
+    File.WriteAllText($"{dir}\\dir2\\subdir1\\file6.txt", "file 6");
+    Directory.CreateDirectory($"{dir}\\dir2\\subdir1\\subsubdir1");
+    File.WriteAllText($"{dir}\\dir2\\subdir1\\subsubdir1\\file7.txt",  "file 7");
 }
 #endregion
 
