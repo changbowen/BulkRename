@@ -11,7 +11,7 @@
     <Title>$(SolutionName)</Title>
     <AssemblyTitle>$(SolutionName)</AssemblyTitle>
     <Product>$(SolutionName)</Product>
-    <Version>1.0.1</Version>
+    <Version>1.0.2</Version>
   </PropertyGroup>
 
   <ItemGroup>

@@ -138,5 +138,11 @@ namespace BulkRename.App
         }
 
         public Func<int, string> TempNameGenerator = _ => GetRandomString(8);
+
+
+        private string commentSymbol = @"#";
+        [Config(Key = "comment_symbol", Section = "misc")]
+        [Option('m', "comment-symbol", HelpText = "The symbol for marking comments in the path list. This is useful when the default symbol exists in the paths. Default is #.")]
+        public string CommentSymbol { get => commentSymbol; set { ExplicitOpts.Add(nameof(CommentSymbol)); commentSymbol = value; } }
     }
 }

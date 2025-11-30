@@ -217,17 +217,23 @@ namespace BulkRename.App
             JsonSerializer.Serialize(obj, DefaultJsonSerializerOptions);
 
         /// <summary>
-        /// Remove lines that are commented out from a string.
+        /// Remove comment text from each line of the string.
         /// </summary>
-        /// <param name="commentChar">The comment symbol. Line content after it will be removed.</param>
-        /// <param name="lineSelector">Optional selector to further transform line text after comments are removed.</param>
+        /// <param name="commentChar">The comment symbol string.</param>
+        /// <param name="onlyAtBeginning">
+        ///     If true, only remove the line if it starts with the <paramref name="commentChar"/> (ignore when the char is in the middle or the end).
+        ///     If false, remove the comment char and all text after it in each line.
+        /// </param>
         /// <returns>All non-empty lines after all the transformations.</returns>
-        public static IEnumerable<string> GetNonComments(this string text, char commentChar = '#', Func<string, string> lineSelector = null) => text
+        public static IEnumerable<string> GetNonComments(this string text, string commentChar = @"#", bool onlyAtBeginning = false) => text
             .Split(Environment.NewLine, StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)
             .Select(s => {
-                var i = s.IndexOf(commentChar, Program.PathComparison);
-                var line = i > -1 ? s.Remove(i).Trim() : s;
-                return lineSelector != null ? lineSelector(line) : line;
+                if (onlyAtBeginning)
+                    return s.StartsWith(commentChar) ? string.Empty : s;
+                else {
+                    var i = s.IndexOf(commentChar, Program.PathComparison);
+                    return i > -1 ? s.Remove(i).Trim() : s;
+                }
             })
             .Where(s => s.Length > 0);
     }

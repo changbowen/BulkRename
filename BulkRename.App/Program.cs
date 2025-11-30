@@ -94,8 +94,10 @@ namespace BulkRename.App
             // display config and exit
             if (File.Exists(ConfigPath)) {
                 ConsoleWrite($@"Current configuration from {ConfigPath}:", ConsoleMessageLevel.Info);
-                ConsoleWrite(string.Join(Environment.NewLine, (await File.ReadAllTextAsync(ConfigPath, Encoding.UTF8))
-                    .GetNonComments(lineSelector: s => Regex.Replace(s, @"^\s*\[.+\]$", string.Empty))));
+                ConsoleWrite(string.Join(Environment.NewLine,(await File.ReadAllTextAsync(ConfigPath, Encoding.UTF8))
+                    .GetNonComments()
+                    .Where(s => !Regex.IsMatch(s, @"^\s*\[.+\]$")) // ignore also config section headers
+                ));
             }
             else
                 ConsoleWrite("No configuration file is found.", ConsoleMessageLevel.Info);
@@ -150,23 +152,23 @@ namespace BulkRename.App
                 ConsoleWrite(Environment.NewLine + string.Join(Environment.NewLine, items.Select(item => $"{item.FullName} [{item.Type}]{(item.Type == PathType.Directory ? $" [{item.Descendants.Count} sub path(s)]" : null)}")), ConsoleMessageLevel.Verbose);
 
             var editorContent = $"""
-                #############################################
-                #         Bulk Rename by Carl Chang         #
-                #############################################
+                {opts.CommentSymbol} ╔══════════════════════════════════════╗
+                {opts.CommentSymbol} ║       BulkRename by Carl Chang       ║
+                {opts.CommentSymbol} ╚══════════════════════════════════════╝
                 
-                # To rename:
-                #    1. Update each line with the new name.
-                #    2. Save and close the editor app.
-                #
-                # Unchanged lines will be skipped.
-                # Lines commented out are invalid paths that will be ignored.
-                # Adding or removing uncommented non-empty lines below will result in a failure.
-                # New names cannot contain illegal characters: " < > | : * ? \ /
+                {opts.CommentSymbol} To rename:
+                {opts.CommentSymbol}    1. Update each line with the new name.
+                {opts.CommentSymbol}    2. Save and close the editor app.
+                {opts.CommentSymbol}
+                {opts.CommentSymbol} Unchanged lines will be skipped.
+                {opts.CommentSymbol} Invalid paths will be commented out.
+                {opts.CommentSymbol} Lines started with the comment symbol will be ignored.
+                {opts.CommentSymbol} Adding or removing uncommented non-empty lines below will result in a failure.
+                {opts.CommentSymbol} Be ware of illegal characters in the paths: " < > | : * ? \ /
 
-
-                { // ignore invalid ones
+                { // generate file list but comment out invalid ones
                     string.Join(Environment.NewLine, items.Select(i =>
-                        i.Skip ? @$"# {i.ErrMsg ?? @"[ERROR]"}" : $@"{(i.Level > 0 ? new string(' ', i.Level * (int)opts.IndentSize) : null)}{i.Name}"
+                        i.Skip ? @$"{opts.CommentSymbol} {i.ErrMsg ?? @"[ERROR]"}" : $@"{(i.Level > 0 ? new string(' ', i.Level * (int)opts.IndentSize) : null)}{i.Name}"
                     ))
                 }
                 """.ReplaceLineEndings();
@@ -187,7 +189,8 @@ namespace BulkRename.App
 
                 // parse modified content
                 var newContent = await File.ReadAllTextAsync(tmpConPath, Encoding.UTF8);
-                var newNames = newContent.GetNonComments().ToArray();
+                // get lines that do not start with comment char
+                var newNames = newContent.GetNonComments(opts.CommentSymbol, true).ToArray();
                 
                 // sanity check
                 if (newNames.Length == 0) {
